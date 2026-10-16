@@ -15,6 +15,7 @@
 <p><a href="register.html">＋ 機械・工具の登録申請（ログイン不要）</a></p>
 <aside class="contact" aria-label="拾得時の連絡先"><strong>三倉建設株式会社</strong><p>この機械・工具は当社の所有物です。<br>お拾いになった方は、下記までご連絡ください。</p><a href="tel:0339323225">03-3932-3225</a><small>タップして電話する</small></aside>
 <div id="result" aria-live="polite">管理番号を入力してください。</div>
+<p><a id="editRequest" href="register.html">この機械・工具を登録・変更申請する</a></p>
 <form method="get"><input id="number" name="id" aria-label="管理番号" placeholder="管理番号" inputmode="numeric" pattern="[1-9][0-9]{0,14}" required><button>照会</button></form>
 </section><footer>閲覧専用 · ログイン不要<br>情報の変更は管理者へお問い合わせください。</footer></main>
 <script>
@@ -22,6 +23,8 @@ const fields = [['name','機械・工具名'],['model','規格・型式'],['unit
 const result = document.getElementById('result');
 const id = (new URLSearchParams(location.search).get('id') || '').trim();
 document.getElementById('number').value = id;
+const editLink=document.getElementById('editRequest');
+editLink.href='register.html'+(id?'?id='+encodeURIComponent(id):'');
 async function load() {
   if (!id) return;
   if (!/^[1-9]\d{0,14}$/.test(id)) {result.textContent='管理番号を確認してください。';return;}
@@ -29,7 +32,10 @@ async function load() {
   try {
     const response = await fetch('https://mitsukura-tools-qr.huyhumg19.chatgpt.site/api/item?id='+encodeURIComponent(id), {credentials:'omit', signal:AbortSignal.timeout(25000)});
     const data = await response.json();
-    if (!response.ok || !data.item) throw new Error(data.error || 'この管理番号は未登録です。');
+    if (!response.ok || !data.item) {
+      if(response.status===404) {result.textContent='管理番号 '+id+' は未登録です。下のリンクから情報を申請してください。';editLink.textContent='このQR番号で登録申請する';return;}
+      throw new Error(data.error || 'データを取得できませんでした。');
+    }
     const number = document.createElement('div');number.className='number';number.textContent='管理番号 ';
     const strong = document.createElement('strong');strong.textContent=id;number.append(strong);
     const list = document.createElement('dl');
@@ -38,6 +44,9 @@ async function load() {
       title.textContent=label;value.textContent=data.item[key] || '—';row.append(title,value);list.append(row);
     }
     result.replaceChildren(number,list);
+    if(data.item.photoUrl && /^https:\/\/mitsukura-tools-qr\.huyhumg19\.chatgpt\.site\/photos\/[a-f0-9-]{36}\/[a-f0-9]{64}\.jpg$/.test(data.item.photoUrl)) {
+      const photo=document.createElement('img');photo.src=data.item.photoUrl;photo.alt=data.item.name||'機械・工具の写真';photo.style.cssText='display:block;width:100%;max-height:420px;object-fit:contain;margin:16px 0;border-radius:10px';photo.decoding='async';number.after(photo);
+    }
     document.title='NO. '+id+' · 三倉建設株式会社';
   } catch(error) {result.textContent=error.name==='TimeoutError' || error instanceof TypeError ? 'データを取得できませんでした。再読み込みしてください。' : error.message;}
 }
