@@ -6,7 +6,7 @@ export default {
     const url = new URL(request.url);
     const id = (url.searchParams.get('id') || '').trim();
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed',{status:405});
-    if (url.pathname !== '/') return new Response('Not found',{status:404});
+    if (!['/', '/api/item'].includes(url.pathname)) return new Response('Not found',{status:404});
     let item = null;
     let error = '';
     let status = 200;
@@ -19,6 +19,14 @@ export default {
         item = data.item;
         if (!item) {error='この管理番号は未登録です。';status=404;}
       } catch {error='データを取得できませんでした。しばらくしてから再読み込みしてください。';status=503;}
+    }
+    if (url.pathname === '/api/item') {
+      return new Response(request.method === 'HEAD' ? null : JSON.stringify({item, error}), {status, headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': 'https://mitsukurakensetsu3290-collab.github.io',
+        'x-content-type-options': 'nosniff'
+      }});
     }
     const contact = `<aside aria-label="所有会社・拾得時の連絡先" style="background:#fff8e8;border:1px solid #eddbac;border-radius:10px;padding:18px;margin-bottom:20px"><strong style="display:block;font-size:20px">三倉建設株式会社</strong><p style="margin:10px 0;font-size:14px;line-height:1.7">この機械・工具は当社の所有物です。<br>お拾いになった方は、下記までご連絡ください。</p><a href="tel:0339323225" style="display:inline-block;font-size:22px;font-weight:700;padding:8px 0" aria-label="三倉建設株式会社に電話する 03-3932-3225">03-3932-3225</a><div style="font-size:12px;color:#657985">タップして電話する</div></aside>`;
     const content = contact + (item ? `<div class="number">管理番号 <strong>${escape(id)}</strong></div><dl>${fields.map(([key,label])=>`<div><dt>${label}</dt><dd>${escape(item[key] || '—')}</dd></div>`).join('')}</dl>` : `<p role="status">${escape(error || 'QRコードを読み取るか、管理番号を入力してください。')}</p>`);
