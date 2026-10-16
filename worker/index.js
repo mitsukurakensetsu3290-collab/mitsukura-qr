@@ -1,9 +1,43 @@
 const upstream = 'https://script.google.com/macros/s/AKfycbyxp2fPngfsV1EtDAZqm8ZmSf7hgbquPhK9W5oC35rY0SWCHe9l8jdEwac5-XfTkSRc9g/exec';
 const fields = [['name','機械・工具名'],['model','規格・型式'],['unit','単位'],['quantity','数量'],['date','購入日'],['disposalDate','廃棄日'],['disposalReason','廃棄理由'],['vehicleNo','積載車輌NO.'],['location','保管場所'],['note','備考'],['updatedAt','最終更新日時']];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const submissionOrigin = 'https://mitsukurakensetsu3290-collab.github.io';
+const submissionRates = new Map();
+async function submitRegistration(request) {
+  const headers={'content-type':'application/json; charset=utf-8','cache-control':'no-store','access-control-allow-origin':submissionOrigin,'x-content-type-options':'nosniff'};
+  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
+  if(request.headers.get('origin')!==submissionOrigin) return reply({ok:false,error:'このページからは送信できません。'},403);
+  if(request.method==='OPTIONS') return new Response(null,{status:204,headers:{...headers,'access-control-allow-methods':'POST, OPTIONS','access-control-allow-headers':'content-type'}});
+  if(request.method!=='POST') return reply({ok:false,error:'Method not allowed'},405);
+  if(Number(request.headers.get('content-length')||0)>16000) return reply({ok:false,error:'送信内容が大きすぎます。'},413);
+  try {
+    const raw=await request.text();
+    if(raw.length>16000) return reply({ok:false,error:'送信内容が大きすぎます。'},413);
+    const input=JSON.parse(raw);
+    if(!input || typeof input!=='object' || Array.isArray(input)) return reply({ok:false,error:'入力内容を確認してください。'},400);
+    const quantity=Number(input.quantity);
+    if(input.website || !String(input.submitter||'').trim() || !String(input.name||'').trim() || !/^[a-f0-9-]{36}$/i.test(input.requestId||'') || !Number.isSafeInteger(quantity) || quantity<1 || quantity>1000000) return reply({ok:false,error:'申請者名・機械名・数量を確認してください。'},400);
+    const limits={submitter:100,name:200,model:200,unit:30,quantity:10,date:10,vehicleNo:100,location:200,note:1000};
+    for(const [key,limit] of Object.entries(limits)) if(String(input[key]||'').length>limit) return reply({ok:false,error:'入力文字数を確認してください。'},400);
+    const now=Date.now();
+    for(const [key,value] of submissionRates) if(value.until<now) submissionRates.delete(key);
+    const address=request.headers.get('cf-connecting-ip')||'unknown';
+    const rate=submissionRates.get(address)||{count:0,until:now+60000};
+    if(rate.count>=5) return reply({ok:false,error:'少し待ってから再送信してください。'},429);
+    rate.count++;submissionRates.set(address,rate);
+    if(submissionRates.size>10000) submissionRates.delete(submissionRates.keys().next().value);
+    const payload={requestId:input.requestId,website:''};
+    for(const key of Object.keys(limits)) payload[key]=String(input[key]||'').trim();
+    const response=await fetch(upstream,{method:'POST',headers:{'content-type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),redirect:'follow',signal:AbortSignal.timeout(25000)});
+    if(!response.ok) throw Error('upstream');
+    const data=await response.json();
+    return reply(data,data.ok?200:400);
+  } catch {return reply({ok:false,error:'送信結果を確認できませんでした。同じ内容で再送信できます（重複登録はされません）。'},503);}
+}
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname==='/api/requests') return submitRegistration(request);
     const id = (url.searchParams.get('id') || '').trim();
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed',{status:405});
     if (!['/', '/api/item'].includes(url.pathname)) return new Response('Not found',{status:404});
