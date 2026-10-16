@@ -16,6 +16,8 @@ Use `/?id=1` to look up a registered equipment number. Unknown numbers show a no
 
 ## Hosting
 
+The public frontend is published with GitHub Pages at https://mitsukurakensetsu3290-collab.github.io/mitsukura-qr/ . Its `index.html` requests the read-only `/api/item?id=...` endpoint on the existing Sites server. The server returns JSON with CORS enabled for this GitHub Pages origin. Google account cookies are not sent by the frontend.
+
 The live server is currently hosted through Sites. GitHub can store this source. GitHub Pages alone cannot execute `worker/index.js`: it requires a server runtime, such as Cloudflare Workers, to fetch the Apps Script endpoint on behalf of visitors.
 
 The Apps Script public deployment must support `?format=json&id=1`, returning `{ "item": { ... } }` for a registered item or `{ "item": null }` for an unknown item. Its access remains read-only; this repository does not contain the Google Sheets editing interface.
