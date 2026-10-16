@@ -3,6 +3,30 @@ const fields = [['name','機械・工具名'],['model','規格・型式'],['unit
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const submissionOrigin = 'https://mitsukurakensetsu3290-collab.github.io';
 const submissionRates = new Map();
+async function uploadPhoto(request,env) {
+  const headers={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
+  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
+  if(request.method!=='POST')return reply({ok:false,error:'Method not allowed'},405);
+  if(Number(request.headers.get('content-length')||0)>450000)return reply({ok:false,error:'写真が大きすぎます。'},413);
+  try {
+    const raw=await request.text();if(raw.length>450000)return reply({ok:false,error:'写真が大きすぎます。'},413);
+    const input=JSON.parse(raw);
+    if(typeof input.imageData!=='string'||!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(input.imageData))return reply({ok:false,error:'JPEG画像を選択してください。'},400);
+    const bytes=Uint8Array.from(atob(input.imageData.split(',')[1]),character=>character.charCodeAt(0));
+    if(bytes.length>300000||bytes.length<4||bytes[0]!==255||bytes[1]!==216||bytes[2]!==255||bytes.at(-2)!==255||bytes.at(-1)!==217)return reply({ok:false,error:'300KB以下のJPEG画像を選択してください。'},400);
+    const address='photo_'+(request.headers.get('cf-connecting-ip')||'unknown');
+    const now=Date.now();const rate=submissionRates.get(address)||{count:0,until:now+60000};
+    if(rate.until<now){rate.count=0;rate.until=now+60000;}
+    if(rate.count>=10)return reply({ok:false,error:'少し待ってから再試行してください。'},429);
+    rate.count++;submissionRates.set(address,rate);
+    if(submissionRates.size>10000)submissionRates.delete(submissionRates.keys().next().value);
+    if(!env?.BUCKET)return reply({ok:false,error:'写真の保存を準備中です。'},503);
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');
+    const key=crypto.randomUUID()+'/'+digest+'.jpg';
+    await env.BUCKET.put(key,bytes,{httpMetadata:{contentType:'image/jpeg'}});
+    return reply({ok:true,photoUrl:'https://mitsukura-tools-qr.huyhumg19.chatgpt.site/photos/'+key});
+  } catch{return reply({ok:false,error:'写真を保存できませんでした。再試行してください。'},503);}
+}
 async function submitRegistration(request, env) {
   const headers={'content-type':'application/json; charset=utf-8','cache-control':'no-store','access-control-allow-origin':submissionOrigin,'x-content-type-options':'nosniff'};
   const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
@@ -48,6 +72,7 @@ async function submitRegistration(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if(url.pathname==='/api/upload-photo')return uploadPhoto(request,env);
     if(url.pathname==='/api/requests') return submitRegistration(request, env);
     if(/^\/photos\/[a-f0-9-]{36}\/[a-f0-9]{64}\.jpg$/.test(url.pathname)) {
       if(!['GET','HEAD'].includes(request.method)) return new Response('Method not allowed',{status:405});
